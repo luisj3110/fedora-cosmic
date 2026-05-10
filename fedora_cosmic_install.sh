@@ -1,0 +1,252 @@
+#!/bin/bash
+set -euo pipefail
+
+# LOGGING
+LOG_FILE="install_cosmic.log"
+exec > >(tee -i "$LOG_FILE")
+exec 2>&1
+
+echo "=================================================="
+echo "FEDORA MINIMALIST COSMIC (By KKmole69)"
+echo "=================================================="
+
+# 1. DNF OPTIMIZATION
+echo "[INFO] -> Optimizando configuración de DNF..."
+sudo sed -i '/max_parallel_downloads/d' /etc/dnf/dnf.conf
+sudo sed -i '/fastestmirror/d' /etc/dnf/dnf.conf
+echo "max_parallel_downloads=10" | sudo tee -a /etc/dnf/dnf.conf
+echo "fastestmirror=True" | sudo tee -a /etc/dnf/dnf.conf
+
+echo "[INFO] -> Configurando repositorios RPM Fusion..."
+sudo dnf install -y \
+    https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+
+sudo dnf makecache --refresh
+sudo dnf upgrade -y
+
+# 2. SISTEMA BASE (COSMIC)
+echo "[INFO] -> Instalando núcleo del entorno COSMIC..."
+sudo dnf install -y \
+    cosmic-session \
+    cosmic-greeter \
+    cosmic-comp \
+    cosmic-panel \
+    cosmic-applets \
+    cosmic-app-library \
+    cosmic-launcher \
+    cosmic-workspaces \
+    cosmic-bg \
+    cosmic-osd \
+    cosmic-idle \
+    cosmic-settings \
+    cosmic-settings-daemon \
+    cosmic-randr \
+    cosmic-notifications \
+    cosmic-icon-theme \
+    cosmic-wallpapers \
+    polkit \
+    dconf \
+    NetworkManager \
+    xdg-user-dirs \
+    gvfs-mtp gvfs-archive gvfs-smb gvfs-nfs \
+    --skip-unavailable
+
+# 3. MULTIMEDIA, UX & CORE APPS
+echo "[INFO] -> Instalando motores de software y audio..."
+# AUDIO & CODECS
+sudo dnf swap -y ffmpeg-free ffmpeg --allowerasing
+sudo dnf install -y \
+    libldac \
+    pipewire \
+    pipewire-alsa \
+    pipewire-codec-aptx \
+    pipewire-gstreamer \
+    pipewire-pulseaudio \
+    pipewire-utils wireplumber \
+    --setopt=install_weak_deps=False
+
+# MULTIMEDIA FRAMEWORK
+sudo dnf install -y \
+    gstreamer1-libav \
+    gstreamer1-plugins-bad-free-extras \
+    gstreamer1-plugins-bad-freeworld \
+    gstreamer1-plugins-ugly \
+    --setopt=install_weak_deps=False
+
+# CORE SOFTWARE & TERMINAL (Incluye apps nativas de COSMIC)
+echo "[INFO] -> Instalando herramientas nativas y terminal..."
+sudo dnf install -y \
+    btop \
+    flatpak \
+    kitty \
+    gnome-disk-utility \
+    cosmic-files \
+    cosmic-edit \
+    cosmic-player cosmic-screenshot \
+    --setopt=install_weak_deps=False
+
+# SYSTEM & UX INTEGRATION
+echo "[INFO] -> Configurando integración de escritorio y servicios..."
+sudo dnf install -y \
+    bluez \
+    fastfetch \
+    dbus-x11 \
+    upower \
+    xdg-desktop-portal \
+    xdg-desktop-portal-cosmic \
+    --setopt=install_weak_deps=False
+
+# FILESYSTEMS & COMPRESSION
+echo "[INFO] -> Soporte para discos externos y archivos comprimidos..."
+sudo dnf install -y \
+    fuse-exfat \
+    ntfs-3g \
+    p7zip \
+    p7zip-plugins \
+    unrar unzip zip \
+    --setopt=install_weak_deps=False
+
+# VISUAL EXPERIENCE (THUMBNAILS & FONTS)
+sudo dnf install -y \
+    ffmpegthumbnailer \
+    gdk-pixbuf2-modules-extra \
+    google-noto-sans-fonts \
+    google-roboto-fonts \
+    librsvg2-tools \
+    --setopt=install_weak_deps=False
+
+# HARDWARE & PRINTING
+echo "[INFO] -> Optimización de energía y servicios de red..."
+sudo dnf install -y \
+    avahi \
+    cups \
+    cups-filters \
+    firewalld \
+    lm_sensors \
+    nss-mdns \
+    power-profiles-daemon \
+    --allowerasing --setopt=install_weak_deps=False
+
+# SEGURIDAD & RED
+echo "[INFO] -> Configurando seguridad y firewall..."
+sudo dnf install -y openssl ca-certificates --setopt=install_weak_deps=False
+
+sudo systemctl enable --now firewalld
+sudo firewall-cmd --permanent --add-port=631/tcp
+sudo firewall-cmd --permanent --add-port=631/udp
+sudo firewall-cmd --permanent --add-service=mdns
+sudo firewall-cmd --set-default-zone=public
+sudo firewall-cmd --reload
+
+sudo systemctl enable avahi-daemon
+sudo systemctl enable cups
+
+# 4. HARDWARE & ESTABILIDAD
+echo "[INFO] -> Microcódigo y soporte de energía..."
+sudo dnf install -y amd-ucode-firmware fwupd --setopt=install_weak_deps=False
+sudo systemctl enable --now fwupd.service fstrim.timer
+sudo systemctl enable --now bluetooth.service
+
+# 5. ACTIVAR INTERFAZ (COSMIC GREETER)
+sudo systemctl enable cosmic-greeter
+sudo systemctl set-default graphical.target
+
+# 6. STACK GRÁFICO (NVIDIA)
+install_nvidia() {
+    echo "[INFO] -> Refrescando metadatos e instalando drivers NVIDIA..."
+    sudo dnf makecache
+    sudo dnf install -y \
+        akmod-nvidia \
+        xorg-x11-drv-nvidia-cuda \
+        nvidia-settings \
+        libva-nvidia-driver \
+        kernel-devel \
+        kernel-headers \
+        xorg-x11-server-Xwayland \
+        mesa-dri-drivers \
+        vulkan-loader \
+        vulkan-tools \
+        --skip-unavailable
+
+    sudo grubby --update-kernel=ALL --args="nvidia-drm.modeset=1"
+
+    echo "[INFO] -> Iniciando compilación de módulos y sincronizando kernel..."
+    sudo akmods --akmod nvidia
+    sudo dracut --force --verbose
+}
+
+if lspci -nn | grep -qi nvidia; then
+    install_nvidia
+else
+    echo "No se detectó una GPU NVIDIA..."
+    read -p "¿Deseas instalar los drivers de NVIDIA de todas formas? (y/n): " force_nv
+    [[ "$force_nv" =~ ^[Yy]$ ]] && install_nvidia
+fi
+
+# 7. LIBRERÍAS & TABLETAS GRÁFICAS
+echo "[INFO] -> Instalando dependencias de entrada y tabletas gráficas..."
+sudo dnf install -y \
+    libwacom \
+    xorg-x11-drv-wacom \
+    libX11 \
+    libXcursor \
+    libXi \
+    libXrandr \
+    mesa-libGLU \
+    libxkbcommon \
+    libxkbcommon-x11 \
+    --setopt=install_weak_deps=False --skip-unavailable
+
+# COMPATIBILIDAD 32-BIT
+install_32bit_compat() {
+    echo "[INFO] -> Instalando librerías 32-bit y compatibilidad..."
+    sudo dnf install -y \
+        mesa-dri-drivers.i686 \
+        mesa-libGL.i686 \
+        libglvnd-glx.i686 \
+        vulkan-loader.i686 \
+        gamemode \
+        gamescope \
+        steam-devices \
+        --setopt=install_weak_deps=False --skip-unavailable || echo "[WARN] Fallo parcial en librerías Mesa 32-bit"
+
+    if lspci -nn | grep -qi nvidia; then
+        echo "[INFO] -> Instalando librerías NVIDIA 32-bit..."
+        sudo dnf install -y xorg-x11-drv-nvidia-libs.i686 --skip-unavailable || echo "[WARN] Fallo en librerías NVIDIA 32-bit"
+    fi
+}
+
+read -p "¿Desea instalar compatibilidad para juegos y librerías 32-bit? (y/n): " choice
+if [[ "$choice" =~ ^[Yy]$ ]]; then
+    install_32bit_compat
+else
+    echo "[INFO] -> Se omitió la compatibilidad 32-bit"
+fi
+
+# 8. APPS & PERSONALIZACIÓN (FLATPAK)
+if ! command -v flatpak &> /dev/null; then
+    sudo dnf install -y flatpak
+fi
+
+echo "[INFO] -> Instalando aplicaciones Flatpak..."
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install flathub -y \
+    com.brave.Browser \
+    net.nokyan.Resources
+
+# Permite que los Flatpaks lean la configuración de temas del host
+sudo flatpak override --filesystem=xdg-config/gtk-4.0:ro
+sudo flatpak override --filesystem=xdg-config/gtk-3.0:ro
+flatpak update -y
+
+# 9. LIMPIEZA
+sudo dnf remove -y tigervnc-server tigervnc-license
+sudo dnf autoremove -y
+
+echo "========================"
+echo "INSTALACIÓN COMPLETADA"
+echo "========================"
+
+read -p "¿Reiniciar ahora? (y/n): " choice
+[[ "$choice" =~ ^[Yy]$ ]] && reboot
