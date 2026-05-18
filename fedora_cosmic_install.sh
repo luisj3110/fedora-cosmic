@@ -167,9 +167,26 @@ install_nvidia() {
         mesa-dri-drivers \
         vulkan-loader \
         vulkan-tools \
+        switcheroo-control \
         --skip-unavailable
 
-    sudo grubby --update-kernel=ALL --args="nvidia-drm.modeset=1"
+    # 1. Parámetros del Kernel para Wayland
+    echo "[INFO] -> Configurando Kernel: Modesetting y FBDEV para Wayland..."
+    sudo grubby --update-kernel=ALL --args="nvidia-drm.modeset=1 nvidia-drm.fbdev=1"
+
+    # 2. Preservación de memoria de video (Evita crasheos al suspender)
+    echo "[INFO] -> Habilitando preservación de VRAM para suspensión segura..."
+    echo "options nvidia NVreg_PreserveVideoMemoryAllocations=1" | sudo tee /etc/modprobe.d/nvidia-power-management.conf
+
+    # 3. Servicios de energía de NVIDIA
+    echo "[INFO] -> Activando servicios Systemd para Suspend/Hibernate..."
+    sudo systemctl enable nvidia-suspend.service
+    sudo systemctl enable nvidia-hibernate.service
+    sudo systemctl enable nvidia-resume.service
+
+    # 4. Soporte para gráficos hibridos
+    echo "[INFO] -> Habilitando Switcheroo Control para gráficos híbridos..."
+    sudo systemctl enable --now switcheroo-control.service
 
     echo "[INFO] -> Iniciando compilación de módulos y sincronizando kernel..."
     sudo akmods --akmod nvidia
