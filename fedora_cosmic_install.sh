@@ -10,12 +10,20 @@ echo "=================================================="
 echo "FEDORA MINIMALIST COSMIC (By KKmole69)"
 echo "=================================================="
 
-# 1. DNF OPTIMIZATION
+# 1. OPTIMIZACIÓN DNF
 echo "[INFO] -> Optimizando configuración de DNF..."
+# Limpiar configuraciones previas para evitar duplicados
 sudo sed -i '/max_parallel_downloads/d' /etc/dnf/dnf.conf
+sudo sed -i '/max_downloads_per_mirror/d' /etc/dnf/dnf.conf
 sudo sed -i '/fastestmirror/d' /etc/dnf/dnf.conf
+sudo sed -i '/minrate/d' /etc/dnf/dnf.conf
+sudo sed -i '/timeout/d' /etc/dnf/dnf.conf
+
 echo "max_parallel_downloads=10" | sudo tee -a /etc/dnf/dnf.conf
-echo "fastestmirror=True" | sudo tee -a /etc/dnf/dnf.conf
+echo "max_downloads_per_mirror=10" | sudo tee -a /etc/dnf/dnf.conf
+echo "fastestmirror=False" | sudo tee -a /etc/dnf/dnf.conf
+echo "minrate=1M" | sudo tee -a /etc/dnf/dnf.conf
+echo "timeout=5" | sudo tee -a /etc/dnf/dnf.conf
 
 echo "[INFO] -> Configurando repositorios RPM Fusion..."
 sudo dnf install -y \
